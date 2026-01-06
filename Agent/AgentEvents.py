@@ -15,7 +15,7 @@ async def news_event_stream_generator(topic: str):
                 query_list = [q["query"] for q in queries]
                 message = f"Planner: Generated {len(queries)} search strategies.\nQueries: {','.join(query_list)}"
                 yield f"data:{json.dumps({'type': 'log','message': message}) }\n\n"
-            elif node_name == "gather_results":
+            elif node_name == "SearchNode":
                 results = state_update.get("search_results", [])
                 message = f"Searching web ... \n found {len(results) if len(results) > 0 else 0} raw web pages."
                 yield f"data:{json.dumps({'type':'log', 'message':message})}\n\n"

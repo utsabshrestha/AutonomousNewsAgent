@@ -26,17 +26,19 @@ class AgentState(TypedDict):
     # 2. Planner node, list of search quries design by Gemini
     search_queries: List[SearchQuery]
 
+    discarded_queries: Annotated[List[str], operator.add]
+
     # 3. Search results from Brave API
-    search_results: Annotated[List[SearchResult], operator.add]
+    search_results: List[SearchResult]
 
     # 3.1 This will have non duplicate and evaluated urls by gemini
     refined_search_results: List[SearchResult]
 
     # 3.2 Selected urls from evaluation
-    selected_urls: List[SearchResult]
+    selected_urls: Annotated[List[SearchResult], operator.add]
 
     # 3.3 Discarded urls from evaluation
-    discarded_urls: List[str]
+    discarded_urls: Annotated[List[str], operator.add]
 
     # 4. Scraped contents of the search results
     scraped_contents: Annotated[List[ScrapedContent], operator.add]

@@ -1,5 +1,9 @@
 import os
+from typing import List
+import uuid
 import requests
+
+from GraphStates import SearchQuery, SearchResult
 
 # Get API key from environment variable
 BRAVE_API_KEY = os.getenv('BRAVE_API_KEY')
@@ -9,7 +13,7 @@ if not BRAVE_API_KEY:
     print("Make sure you've sourced your .zshrc or .env file")
     exit(1)
 
-def search_brave_news(query, count=5):
+def search_brave_news(query : str, count=5):
     try:
         """
         Searches Brave News API for the latest news links.
@@ -32,11 +36,30 @@ def search_brave_news(query, count=5):
         if response.status_code == 200:
             return response.json().get('results', [])
         else:
-            print(f"Error: {response.status_code}")
-            return []
+            print(f"Error: {search_brave_news.__name__} {response.status_code}")
+            return Exception(f"Error: status {response.status_code}")
     except Exception as error:
         print(f"Error @ {search_brave_news.__name__} : {error}")
+        return error
     
+def GetBraveSearchResults(response: dict, query : SearchQuery) -> List[SearchResult]:
+    try:
+        searchResults: List[SearchResult] = []
+        if response :
+            for search in response:
+                new_result: SearchResult = {
+                        "id": uuid.uuid4().hex[:8],
+                        "url": search["url"],
+                        "title": search["title"],
+                        "description": search["description"],
+                        "page_age": search["page_age"],
+                        "search_query": query
+                    }
+                searchResults.append(new_result)
+        return searchResults
+    except Exception as e:
+        print(f"Error {e}")
+        return List[SearchResult]
 
 def test_brave_search(query):
     """Test Brave Search API with a query"""

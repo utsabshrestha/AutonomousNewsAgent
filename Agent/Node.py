@@ -1,14 +1,17 @@
 import datetime
 import json
+from random import random
 import stat
+from time import time, sleep
 from typing import List
+from DuckDuckGoSearchApi import search_duckduckgo
 from GraphStates import AgentState
 from GraphStates import SearchQuery
 from GraphStates import SearchResult
 from GraphStates import ScrapedContent
 from GeminiApi import GeminiApi
 from langchain_core.messages import SystemMessage, HumanMessage
-from BraveSearchApi import search_brave_news
+from BraveSearchApi import GetBraveSearchResults, search_brave_news
 import uuid
 from JinaAiScrape import JinaAiScrape
 from langgraph.types import Send
@@ -23,11 +26,17 @@ def PlannerNode(state: AgentState) -> dict :
     year = datetime.datetime.now().year
     loop_step = state.get('loop_step',0)
 
+    discarded_queries = state["discarded_queries"]
+    discardedQuries = ""
+    if discarded_queries:
+        discardedQuries = ", ".join(discarded_queries)
+
     # check if we are re-planning search queries
     if loop_step > 0:
-        instruction = "You previously generated queries that found no valid news. Try DIFFERENT keywords or specific sub-topics."
+        instruction = f"You previously generated queries that found no valid news. Try DIFFERENT keywords or specific sub-topics. Here are the previous queries you have made: [{discardedQuries}]"
     else:
         instruction = "Your goal is to Break down the topic into 3 specific web search queries."
+
 
      # 3. The System Prompt (The Rules)
     system_prompt = f"""You are a Senior News Editor. 
@@ -39,7 +48,7 @@ def PlannerNode(state: AgentState) -> dict :
     3. Vary the queries to cover different angles (e.g., financial impact, political response, key events).
     
     IMPORTANT: You must return ONLY a raw JSON list of strings. Do not add Markdown formatting.
-    Example output: ["query 1", "query 2", "query 3"]
+    Example output: ["query 1", "query 2", "query 3", "query 4"]
     """
 
     # 4. The User Prompt (The Task)
@@ -78,42 +87,84 @@ def PlannerNode(state: AgentState) -> dict :
             "id": uuid.uuid4().hex[:8]
         }
         searchQueries.append(new_query)
+    if loop_step == 0 and len(searchQueries) >= 3:
+        searchQueries[1]["query"] = "Nepal Government 2026"
+        searchQueries[2]["query"] = "USA Government 2026"
 
-    # 7. Update the State
-    # return {"search_queries": searchQueries}
-    return {"search_queries": [{
-            "query": "Nepal politics 2025",
-            "id": uuid.uuid4().hex[:8]
-        }, {
-            "query": "Iceland visit 2025",
-            "id": uuid.uuid4().hex[:8]
-        }, {
-            "query": "Open Ai stock",
-            "id": uuid.uuid4().hex[:8]
-        }]}
+    #7. Update the State
+    return {"search_queries": searchQueries, "loop_step": loop_step + 1}
+    # return {"search_queries": [{
+    #         "query": "Nepal politics 2025",
+    #         "id": uuid.uuid4().hex[:8]
+    #     }, {
+    #         "query": "Iceland visit 2025",
+    #         "id": uuid.uuid4().hex[:8]
+    #     }, {
+    #         "query": "Open Ai stock",
+    #         "id": uuid.uuid4().hex[:8]
+    #     }, {
+    #         "query": "Nepal stock",
+    #         "id": uuid.uuid4().hex[:8]
+    #     }]}
 
-
-
-def SearchNode(state: SearchQuery) -> dict:
-    results = search_brave_news(state['query'], 6)
+def SearchNodeSynchrous(state : AgentState) -> dict:
     searchResults: List[SearchResult] = []
-    if results :
-        for search in results:
-            new_result: SearchResult = {
-                    "id": uuid.uuid4().hex[:8],
-                    "url": search["url"],
-                    "title": search["title"],
-                    "description": search["description"],
-                    "page_age": search["page_age"],
-                    "search_query": state
-                }
-            searchResults.append(new_result)
+
+    for query in state["search_queries"]:
+        sleep(1.5)
+        result = GetBraveSearchResults(search_brave_news(query["query"], 6), query)
+        searchResults.extend(result)
 
     return {"search_results": searchResults}
 
+def SearchNode(payload) -> dict:
+    try:
+        query_obj = payload["query_data"]
+        target_engine = payload["engine"]
+        query = payload["query_data"]["query"]
+        if target_engine == "brave":
+            try:
+                sleep(1.5)  # Rate limit delay for Brave API
+                searchResults = GetBraveSearchResults(search_brave_news(query, 6), payload["query_data"])
+            except Exception as e:
+                print(f"Brave searching failed {e}, falling back to DuckDuckGo")
+                target_engine = "duckduckgo"
+
+        if target_engine == "duckduckgo":
+            searchResults = search_duckduckgo(query_obj, 6)
+        
+
+        return {"search_results": searchResults}
+    except Exception as e:
+        print(f"Exception at SearchNode {e}")
+        return {"search_results": []}
+
+
+# def Route_to_SearchNode(state: AgentState) -> List[Send]:
+#     print(f"Generating paths for: {state['search_queries']}") 
+
+#     return [Send("SearchNode", searchQueries) for searchQueries in state["search_queries"]]
+
 
 def Route_to_SearchNode(state: AgentState) -> List[Send]:
-    return [Send("SearchNode", searchQueries) for searchQueries in state["search_queries"]]
+    queries = state["search_queries"]
+    tasks = []
+    try:
+
+        for i, query_obj in enumerate(queries):
+            if i < 2:
+                engine = "brave"
+            else:
+                engine = "brave"
+            payload = {
+                "query_data": query_obj,
+                "engine": engine
+            }
+
+            tasks.append(Send("SearchNode", payload))
+    except Exception as e:
+        print(f"Error {e}")
+    return tasks
 
 def RemoveDuplicateSearchResults(state: AgentState) -> dict:
     all_results = state["search_results"]
@@ -179,18 +230,24 @@ def SearchResultsEvaluationNode(state: AgentState) -> dict:
 
         good_results: List[SearchResult] = []
         bad_results= []
+        discarded_queries = set()
 
         for result in state["refined_search_results"]:
             if result["id"] in valid_ids:
                 good_results.append(result)
             else:
                 bad_results.append(result["url"])
+                if result["search_query"]["query"] not in discarded_queries:
+                    discarded_queries.add(result["search_query"]["query"])
+
+    
     except Exception as e:
         print(f"Error parsing filter: {e}")
         good_results = [] # Fail safe
         bad_results = []
+        discarded_queries = set()
 
-    return {"selected_urls": good_results, "discarded_urls": bad_results}
+    return {"selected_urls": good_results, "discarded_urls": bad_results, "discarded_queries": list(discarded_queries)}
 
 def ScrapeNode(state: SearchResult) -> dict:
     url = state["url"]
@@ -218,7 +275,7 @@ def Check_Sufficient_Urls(state: AgentState):
         return "ScrapeNode"
 
     # 2. If we have enough good URLs -> Proceed to Scrape.
-    if len(good_urls) >= 3:
+    if len(good_urls) >= 6:
         return "ScrapeNode"
     
     # 3. Otherwise -> Go back to Planner to find more.
