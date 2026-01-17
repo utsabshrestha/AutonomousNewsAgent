@@ -1,0 +1,46 @@
+# Part 1: The Deployment (The App itself)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-backend
+spec:
+  replicas: 1 # We only want 1 copy of the backend running
+  selector:
+    matchLabels:
+      app: agent-backend
+  template:
+    metadata:
+      labels:
+        app: agent-backend
+    spec:
+      containers:
+        - name: agent-container
+          # REPLACE 'YOUR_GITHUB_USERNAME' BELOW!
+          image: ghcr.io/utsabshrestha/autonomousnewsagent-agent:latest
+          # This tells K8s to always check if there is a newer version
+          imagePullPolicy: Always 
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: agent-secrets
+          # Optional: Define limits so it doesn't eat your whole CPU
+          resources:
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+---
+# Part 2: The Service (The Doorway to the App)
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-service
+spec:
+  type: LoadBalancer # Exposes the service to your computer (localhost)
+  selector:
+    app: agent-backend
+  ports:
+    - protocol: TCP
+      port: 8000      # Port accessible on your computer
+      targetPort: 8000 # Port the container is listening on

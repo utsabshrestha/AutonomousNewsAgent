@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend-container
+          # REPLACE WITH YOUR ACTUAL USERNAME (keep lowercase)
+          image: ghcr.io/utsabshrestha/autonomousnewsagent-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80 # Nginx runs on port 80 inside the container
+          resources:
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  type: LoadBalancer # Exposes it to your browser
+  selector:
+    app: frontend
+  ports:
+    - protocol: TCP
+      port: 3000      # You will access this in browser (localhost:3000)
+      targetPort: 80  # Maps to the Nginx port inside the container
