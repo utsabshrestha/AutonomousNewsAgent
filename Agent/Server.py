@@ -7,7 +7,7 @@ import asyncio
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from Agent.GeminiApi import GeminiApi
+from GeminiApi import GeminiApi
 from Graph import graph as agent_app
 from AgentEvents import news_event_stream_generator as agent
 
